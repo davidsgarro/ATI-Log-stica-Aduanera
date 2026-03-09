@@ -13,6 +13,52 @@ MONEDAS = ["CRC", "USD", "EUR", "BRL"]
 
 #---------------------------------------------------------------------------------------- FUNCIONES ----------------------------------------------------------------------------------------
 
+#-------------------------------------------------------------- FUNCIONES PRECIOS E IMPUESTOS --------------------------------------------------------------
+
+#funcion para guardar precios e impuestos en el archivo precios_impuestos.txt, guarda el contador de registros en la primera linea
+#luego cada registro en una linea con su id, producto_id, pais_id, precio, impuesto y moneda separados por |
+def guardar_precios_impuestos():
+    global precios_impuestos, contador_registros
+    try:
+        with open("precios_impuestos.txt", "w", encoding="utf-8") as archivo:
+            archivo.write(str(contador_registros) + "\n")
+            for registro in precios_impuestos:
+                linea = f"{registro['id']}|{registro['producto_id']}|{registro['pais_id']}|{registro['precio']}|{registro['impuesto']}|{registro['moneda']}\n"
+                archivo.write(linea)
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudieron guardar los precios e impuestos.\n{e}")
+
+#funcion para cargar precios e impuestos desde el archivo de precios_impuestos.txt
+#si ese archivo no existe, lo crea con un contador de registros en 1 y una lista vacia de precios e impuestos
+def cargar_precios_impuestos():
+    global precios_impuestos, contador_registros
+    try:
+        with open("precios_impuestos.txt", "r", encoding="utf-8") as archivo:
+            lineas = archivo.readlines()
+
+            if len(lineas) > 0:
+                contador_registros = int(lineas[0].strip())
+
+            precios_impuestos = []
+            for linea in lineas[1:]:
+                datos = linea.strip().split("|")
+                if len(datos) == 6:
+                    registro = {
+                        "id": int(datos[0]),
+                        "producto_id": int(datos[1]),
+                        "pais_id": int(datos[2]),
+                        "precio": float(datos[3]),
+                        "impuesto": float(datos[4]),
+                        "moneda": datos[5]
+                    }
+                    precios_impuestos.append(registro)
+    except FileNotFoundError:
+        precios_impuestos = []
+        contador_registros = 1
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudieron cargar los precios e impuestos.\n{e}")
+
+
 #-------------------------------------------------------------- FUNCIONES GESTION PAISES --------------------------------------------------------------
 
 #funcion para guardar paises en el archivo paises.txt, guarda el contador de paises en la primera linea y luego cada pais en una linea con su id y nombre separados por |
@@ -94,6 +140,302 @@ def cargar_productos():
 EMAIL_REGEX = r"^[\w\.-]+@[\w\.-]+\.\w+$"
 
 #--------------------------------------------------------------------------- VENTANAS ---------------------------------------------------------------------------
+
+#-------------------------------------------------------------- VENTANA PRECIOS E IMPUESTOS --------------------------------------------------------------
+
+#ventana para gestionar precios e impuestos, con una tabla para mostrar los registros y un formulario para agregar o editar registros
+#valida que se hayan registrado al menos un producto y un país antes de permitir agregar un registro
+class PreciosImpuestosWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Precios e impuestos")
+        self.geometry("850x420")
+        self.resizable(False, False)
+
+        self.producto_var = tk.StringVar()
+        self.pais_var = tk.StringVar()
+        self.precio_var = tk.StringVar()
+        self.impuesto_var = tk.StringVar()
+        self.moneda_var = tk.StringVar(value=MONEDAS[0])
+
+        frame_lista = tk.Frame(self)
+        frame_lista.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+
+        lbl_lista = tk.Label(frame_lista, text="Registros de precios e impuestos")
+        lbl_lista.pack()
+
+        self.tree = ttk.Treeview(
+            frame_lista,
+            columns=("id", "producto", "pais", "precio", "impuesto", "moneda", "total"),
+            show="headings",
+            height=14
+        )
+        self.tree.heading("id", text="ID")
+        self.tree.heading("producto", text="Producto")
+        self.tree.heading("pais", text="País")
+        self.tree.heading("precio", text="Precio")
+        self.tree.heading("impuesto", text="Impuesto (%)")
+        self.tree.heading("moneda", text="Moneda")
+        self.tree.heading("total", text="Costo total")
+
+        self.tree.column("id", width=40, anchor="center")
+        self.tree.column("producto", width=120)
+        self.tree.column("pais", width=120)
+        self.tree.column("precio", width=80, anchor="e")
+        self.tree.column("impuesto", width=80, anchor="e")
+        self.tree.column("moneda", width=70, anchor="center")
+        self.tree.column("total", width=100, anchor="e")
+
+        self.tree.pack(side="left", fill="y")
+
+        scrollbar = ttk.Scrollbar(frame_lista, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+
+        self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
+
+        frame_form = tk.Frame(self)
+        frame_form.pack(side="right", fill="y", padx=10, pady=10)
+
+        lbl_titulo = tk.Label(frame_form, text="Datos del registro", font=("Arial", 11, "bold"))
+        lbl_titulo.grid(row=0, column=0, columnspan=2, pady=5)
+
+        lbl_producto = tk.Label(frame_form, text="Producto:")
+        lbl_producto.grid(row=1, column=0, sticky="e", padx=5, pady=5)
+
+        self.combo_producto = ttk.Combobox(
+            frame_form,
+            textvariable=self.producto_var,
+            state="readonly",
+            width=25
+        )
+        self.combo_producto.grid(row=1, column=1, padx=5, pady=5)
+
+        lbl_pais = tk.Label(frame_form, text="País:")
+        lbl_pais.grid(row=2, column=0, sticky="e", padx=5, pady=5)
+
+        self.combo_pais = ttk.Combobox(
+            frame_form,
+            textvariable=self.pais_var,
+            state="readonly",
+            width=25
+        )
+        self.combo_pais.grid(row=2, column=1, padx=5, pady=5)
+
+        lbl_precio = tk.Label(frame_form, text="Precio:")
+        lbl_precio.grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        entry_precio = tk.Entry(frame_form, textvariable=self.precio_var, width=28)
+        entry_precio.grid(row=3, column=1, padx=5, pady=5)
+
+        lbl_impuesto = tk.Label(frame_form, text="Impuesto: (%)")
+        lbl_impuesto.grid(row=4, column=0, sticky="e", padx=5, pady=5)
+        entry_impuesto = tk.Entry(frame_form, textvariable=self.impuesto_var, width=28)
+        entry_impuesto.grid(row=4, column=1, padx=5, pady=5)
+
+        lbl_moneda = tk.Label(frame_form, text="Moneda:")
+        lbl_moneda.grid(row=5, column=0, sticky="e", padx=5, pady=5)
+
+        combo_moneda = ttk.Combobox(
+            frame_form,
+            textvariable=self.moneda_var,
+            values=MONEDAS,
+            state="readonly",
+            width=25
+        )
+        combo_moneda.grid(row=5, column=1, padx=5, pady=5)
+
+        btn_guardar = ttk.Button(frame_form, text="Agregar / Guardar", command=self.guardar_registro)
+        btn_guardar.grid(row=6, column=0, columnspan=2, pady=5)
+
+        btn_nuevo = ttk.Button(frame_form, text="Nuevo", command=self.limpiar_formulario)
+        btn_nuevo.grid(row=7, column=0, columnspan=2, pady=5)
+
+        btn_eliminar = ttk.Button(frame_form, text="Eliminar", command=self.eliminar_registro)
+        btn_eliminar.grid(row=8, column=0, columnspan=2, pady=5)
+
+        btn_cerrar = ttk.Button(frame_form, text="Cerrar", command=self.destroy)
+        btn_cerrar.grid(row=9, column=0, columnspan=2, pady=10)
+
+        self.cargar_comboboxes()
+        self.cargar_registros_en_tabla()
+    #funcion para cargar los nombres de los productos y paises en los comboboxes, obtiene los nombres de las variables globales productos y paises y los asigna a los comboboxes correspondientes
+    def cargar_comboboxes(self):
+        nombres_productos = [producto["nombre"] for producto in productos]
+        nombres_paises = [pais["nombre"] for pais in paises]
+
+        self.combo_producto["values"] = nombres_productos
+        self.combo_pais["values"] = nombres_paises
+
+    #funcion para obtener el nombre de un producto a partir de su id, busca en la variable global productos el producto con el id dado y devuelve su nombre
+    #si no lo encuentra devuelve "Desconocido"
+    def obtener_nombre_producto(self, producto_id):
+        for producto in productos:
+            if producto["id"] == producto_id:
+                return producto["nombre"]
+        return "Desconocido"
+
+    #funcion para obtener el nombre de un pais a partir de su id, busca en la variable global paises el pais con el id dado y devuelve su nombre
+    def obtener_nombre_pais(self, pais_id):
+        for pais in paises:
+            if pais["id"] == pais_id:
+                return pais["nombre"]
+        return "Desconocido"
+
+    #funcion para obtener el id de un producto a partir de su nombre, busca en la variable global productos el producto con el nombre dado y devuelve su id
+    def obtener_id_producto_por_nombre(self, nombre):
+        for producto in productos:
+            if producto["nombre"] == nombre:
+                return producto["id"]
+        return None
+
+    #funcion para obtener el id de un pais a partir de su nombre, busca en la variable global paises el pais con el nombre dado y devuelve su id
+    def obtener_id_pais_por_nombre(self, nombre):
+        for pais in paises:
+            if pais["nombre"] == nombre:
+                return pais["id"]
+        return None
+
+    #funcion para calcular el costo total a partir del precio y el impuesto, devuelve el resultado de sumar el precio con el impuesto calculado como un porcentaje del precio
+    def calcular_costo_total(self, precio, impuesto):
+        return precio + (precio * (impuesto / 100))
+
+    #funcion para cargar los registros de precios e impuestos en la tabla, primero borra los registros que ya estan en la tabla para evitar duplicados
+    #luego carga los registros desde la variable global precios_impuestos
+    def cargar_registros_en_tabla(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        for registro in precios_impuestos:
+            producto_nombre = self.obtener_nombre_producto(registro["producto_id"])
+            pais_nombre = self.obtener_nombre_pais(registro["pais_id"])
+            total = self.calcular_costo_total(registro["precio"], registro["impuesto"])
+
+            self.tree.insert("", "end", values=(
+                registro["id"],
+                producto_nombre,
+                pais_nombre,
+                f"{registro['precio']:.2f}",
+                f"{registro['impuesto']:.2f}",
+                registro["moneda"],
+                f"{total:.2f}"
+            ))
+
+    #funcion para limpiar el formulario de datos del registro y deseleccionar cualquier registro seleccionado en la tabla
+    def limpiar_formulario(self):
+        self.producto_var.set("")
+        self.pais_var.set("")
+        self.precio_var.set("")
+        self.impuesto_var.set("")
+        self.moneda_var.set(MONEDAS[0])
+        self.tree.selection_remove(*self.tree.selection())
+
+    #funcion que se ejecuta al seleccionar un registro en la tabla, carga los datos del registro seleccionado en el formulario para poder editarlos o eliminarlos
+    def on_tree_select(self, event):
+        selected = self.tree.selection()
+        if not selected:
+            return
+
+        item = self.tree.item(selected[0])
+        valores = item["values"]
+
+        self.producto_var.set(valores[1])
+        self.pais_var.set(valores[2])
+        self.precio_var.set(str(valores[3]))
+        self.impuesto_var.set(str(valores[4]))
+        self.moneda_var.set(valores[5])
+
+    #funcion para guardar un nuevo registro o actualizar uno existente, valida que se hayan registrado al menos un producto y un país antes de permitir agregar un registro
+    def guardar_registro(self):
+        global contador_registros
+
+        if len(productos) == 0:
+            messagebox.showwarning("Atención", "Primero debe registrar al menos un producto.")
+            return
+
+        if len(paises) == 0:
+            messagebox.showwarning("Atención", "Primero debe registrar al menos un país.")
+            return
+
+        producto_nombre = self.producto_var.get().strip()
+        pais_nombre = self.pais_var.get().strip()
+        precio_texto = self.precio_var.get().strip()
+        impuesto_texto = self.impuesto_var.get().strip()
+        moneda = self.moneda_var.get().strip()
+
+        if not producto_nombre or not pais_nombre or not precio_texto or not impuesto_texto or not moneda:
+            messagebox.showerror("Error", "Todos los datos son obligatorios.")
+            return
+
+        try:
+            precio = float(precio_texto)
+            impuesto = float(impuesto_texto)
+
+            if precio < 0 or impuesto < 0:
+                raise ValueError()
+        except ValueError:
+            messagebox.showerror("Error", "Precio e impuesto (%) deben ser números positivos.")
+            return
+
+        producto_id = self.obtener_id_producto_por_nombre(producto_nombre)
+        pais_id = self.obtener_id_pais_por_nombre(pais_nombre)
+
+        if producto_id is None or pais_id is None:
+            messagebox.showerror("Error", "Producto o país inválido.")
+            return
+
+        selected = self.tree.selection()
+        if selected:
+            item = self.tree.item(selected[0])
+            registro_id = item["values"][0]
+
+            for registro in precios_impuestos:
+                if registro["id"] == registro_id:
+                    registro["producto_id"] = producto_id
+                    registro["pais_id"] = pais_id
+                    registro["precio"] = precio
+                    registro["impuesto"] = impuesto
+                    registro["moneda"] = moneda
+                    break
+        else:
+            nuevo = {
+                "id": contador_registros,
+                "producto_id": producto_id,
+                "pais_id": pais_id,
+                "precio": precio,
+                "impuesto": impuesto,
+                "moneda": moneda
+            }
+            precios_impuestos.append(nuevo)
+            contador_registros += 1
+
+        guardar_precios_impuestos()
+        self.cargar_registros_en_tabla()
+        self.limpiar_formulario()
+
+    #funcion para eliminar un registro seleccionado en la tabla, muestra un mensaje de confirmacion antes de eliminar el registro
+    #si se confirma, elimina el registro de la variable global precios_impuestos y actualiza la tabla y el formulario
+    def eliminar_registro(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Atención", "Seleccione un registro para eliminar.")
+            return
+
+        item = self.tree.item(selected[0])
+        registro_id = item["values"][0]
+
+        confirmar = messagebox.askyesno(
+            "Confirmar", "¿Está seguro de eliminar el registro seleccionado?"
+        )
+        if not confirmar:
+            return
+
+        global precios_impuestos
+        precios_impuestos = [r for r in precios_impuestos if r["id"] != registro_id]
+
+        guardar_precios_impuestos()
+        self.cargar_registros_en_tabla()
+        self.limpiar_formulario()
+
 
 #-------------------------------------------------------------- VENTANA GESTION PAISES --------------------------------------------------------------
 class PaisesWindow(tk.Toplevel):
@@ -469,6 +811,7 @@ class App(tk.Tk):
 
         cargar_productos()
         cargar_paises()
+        cargar_precios_impuestos()
         self.protocol("WM_DELETE_WINDOW", self.cerrar_app)
 
         titulo = tk.Label(self, text="ATI Logística Aduanera", font=("Arial", 16, "bold"))
@@ -527,6 +870,7 @@ class App(tk.Tk):
     def cerrar_app(self):
         guardar_productos()
         guardar_paises()
+        guardar_precios_impuestos()
         self.destroy()
 
     #funcion para abrir la ventana de configuración de usuario
@@ -543,7 +887,7 @@ class App(tk.Tk):
 
     #funcion para abrir la ventana de gestión de precios e impuestos
     def abrir_precios(self):
-        messagebox.showinfo("Precios", "Aquí irá la gestión de precios e impuestos")
+        PreciosImpuestosWindow(self)
 
     #funcion para abrir la ventana de generación de reportes
     def abrir_reportes(self):
